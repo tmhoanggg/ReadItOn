@@ -1,8 +1,9 @@
 // Tiny localStorage-backed settings + helpers.
-import { CLIENT_ID } from './config.js';
+import { CLIENT_ID, API_KEY, TOOL_COLORS } from './config.js';
 
 const K_CLIENT_ID = 'readiton.clientId'; // optional per-browser override
-const K_INK_COLOR = 'readiton.inkColor';
+const K_COLOR = 'readiton.color.';       // + tool name
+const K_FOLDER = 'readiton.folder';      // { id, name } chosen Drive folder
 
 export const settings = {
   // Effective client id: the deployment's baked-in id, or a local override.
@@ -18,8 +19,28 @@ export const settings = {
   getClientIdOverride() { return (localStorage.getItem(K_CLIENT_ID) || '').trim(); },
   hasDrive() { return !!this.getClientId(); },
 
-  getInkColor() { return localStorage.getItem(K_INK_COLOR) || '#ffd400'; },
-  setInkColor(v) { localStorage.setItem(K_INK_COLOR, v); },
+  // The folder picker needs an API key; without it we fall back to an
+  // auto-created "ReadItOn" folder.
+  getApiKey() { return (API_KEY || '').trim(); },
+  hasPicker() { return !!this.getApiKey(); },
+
+  // Per-tool ink color (preselected when a tool is chosen).
+  getToolColor(tool) {
+    return localStorage.getItem(K_COLOR + tool) || TOOL_COLORS[tool] || '#ffd400';
+  },
+  setToolColor(tool, v) {
+    if (tool) localStorage.setItem(K_COLOR + tool, v);
+  },
+
+  // Chosen Drive folder for storing papers.
+  getFolder() {
+    try { return JSON.parse(localStorage.getItem(K_FOLDER) || 'null'); }
+    catch { return null; }
+  },
+  setFolder(folder) {
+    if (folder && folder.id) localStorage.setItem(K_FOLDER, JSON.stringify({ id: folder.id, name: folder.name || 'Folder' }));
+    else localStorage.removeItem(K_FOLDER);
+  },
 };
 
 export function uid() {

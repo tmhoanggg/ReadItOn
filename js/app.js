@@ -1,22 +1,29 @@
-// ReadItOn — app controller.
+// ReadItOn — app controller. Papers live in the user's Google Drive, so the
+// app requires sign-in; there is no on-device mode.
 import { auth } from './auth.js';
 import { PdfViewer } from './viewer.js';
 import { AnnotationManager } from './annotations.js';
 import { exportAnnotatedPdf } from './export.js';
-import { settings, debounce, toast } from './store.js';
+import { settings, toast } from './store.js';
 import { DEFAULT_COLORS } from './config.js';
-import { createLocalBackend, createDriveBackend, migrateLocalToDrive } from './storage.js';
+import { createDriveBackend } from './storage.js';
+import { pickFolder } from './picker.js';
 
 const $ = (id) => document.getElementById(id);
 const K_THEME = 'readiton.theme';
-const K_DRIVE_FLAG = 'readiton.driveConnected';
+const COLOR_TOOLS = ['highlight', 'underline', 'note', 'freehand', 'text'];
 
 const els = {
   viewerControls: $('viewer-controls'),
   grid: $('library-grid'),
   hero: $('hero'),
+  libHead: $('lib-head'),
+  signinGate: $('signin-gate'),
+  importBtn: $('import-btn'),
   dropzone: $('dropzone'),
   storagePill: $('storage-pill'),
+  folderChip: $('folder-chip'),
+  folderName: $('folder-name'),
   fileInput: $('file-input'),
   libraryView: $('library-view'),
   viewerView: $('viewer-view'),
@@ -26,6 +33,8 @@ const els = {
   docTitle: $('doc-title'),
   inkColor: $('ink-color'),
   swatches: $('swatches'),
+  annotTools: $('annotation-tools'),
+  saveBtn: $('save-drive'),
   zoomLevel: $('zoom-level'),
   syncStatus: $('sync-status'),
   connectBtn: $('connect-drive-btn'),
@@ -39,31 +48,41 @@ const els = {
   clientIdInput: $('client-id-input'),
 };
 
-const localBackend = createLocalBackend();
-let driveBackend = null;
-let backend = localBackend;
+const backend = createDriveBackend();
 
 const state = { paper: null, pdfBytes: null };
 let viewer = null;
 let annot = null;
+let currentTool = 'select';
+let dirty = false;               // unsaved annotation changes (manual save)
 
-// ---------- sync status ----------
+// ---------- sync / save status ----------
 function setSync(text, cls = '') {
   els.syncStatus.textContent = text;
   els.syncStatus.className = 'sync-status' + (cls ? ' ' + cls : '');
 }
-const savedLabel = () => (backend.kind === 'drive' ? '✓ Synced' : '✓ Saved');
-
-const saveDebounced = debounce(async () => {
+function markDirty() {
+  dirty = true;
+  setSync('● Unsaved changes', 'dirty');
+  els.saveBtn?.classList.add('has-unsaved');
+}
+function markSaved() {
+  dirty = false;
+  setSync('✓ Saved', 'ok');
+  els.saveBtn?.classList.remove('has-unsaved');
+}
+async function doSave() {
   if (!annot || !state.paper) return;
+  if (!dirty) { setSync('✓ Saved', 'ok'); return; }
   try {
+    setSync('Saving…');
     await backend.saveAnnotations(state.paper, annot.getData());
-    setSync(savedLabel(), 'ok');
+    markSaved();
   } catch (e) {
     setSync('⚠ Save failed', 'warn');
-    toast('Could not save: ' + e.message);
+    toast('Could not save: ' + (e?.message || e));
   }
-}, 1000);
+}
 
 // ================= Theme =================
 function effectiveDark() {
@@ -84,17 +103,9 @@ els.themeBtn.addEventListener('click', () => {
 
 // ================= Auth / account =================
 auth.onChange(() => {
-  const signedIn = auth.isSignedIn();
-  if (signedIn) {
-    if (!driveBackend) driveBackend = createDriveBackend();
-    backend = driveBackend;
-    localStorage.setItem(K_DRIVE_FLAG, '1');
-  } else {
-    backend = localBackend;
-    driveBackend = null;
-  }
   updateAccountUI();
-  loadLibrary();
+  renderGate();
+  if (auth.isSignedIn()) loadLibrary();
 });
 
 function updateAccountUI() {
@@ -107,22 +118,39 @@ function updateAccountUI() {
     els.userEmail.textContent = p.email || 'Google account';
   }
   renderStoragePill();
+  renderFolderChip();
   renderAccountState();
+}
+
+function renderGate() {
+  const signedIn = auth.isSignedIn();
+  els.signinGate.classList.toggle('hidden', signedIn);
+  els.libHead.classList.toggle('hidden', !signedIn);
+  els.importBtn.classList.toggle('hidden', !signedIn);
+  els.grid.classList.toggle('hidden', !signedIn);
+  if (!signedIn) els.hero.classList.add('hidden');
+  renderFolderChip();
 }
 
 function renderStoragePill() {
   const signedIn = auth.isSignedIn();
   if (signedIn) {
     const email = auth.getEmail() || '';
+    els.storagePill.classList.remove('hidden');
     els.storagePill.className = 'storage-pill synced';
     els.storagePill.innerHTML =
-      `<svg class="ic"><use href="#i-cloud"/></svg> Synced with Google Drive${email ? ' · ' + escapeHtml(email) : ''}`;
+      `<svg class="ic"><use href="#i-cloud"/></svg> Synced to Google Drive${email ? ' · ' + escapeHtml(email) : ''}`;
   } else {
-    els.storagePill.className = 'storage-pill';
-    els.storagePill.innerHTML =
-      `<svg class="ic"><use href="#i-device"/></svg> Saved on this device · <a href="#" id="pill-connect">connect Drive to sync</a>`;
-    const link = $('pill-connect');
-    if (link) link.addEventListener('click', (e) => { e.preventDefault(); connectDrive(); });
+    els.storagePill.classList.add('hidden');
+  }
+}
+
+function renderFolderChip() {
+  const show = auth.isSignedIn() && settings.hasPicker();
+  els.folderChip.classList.toggle('hidden', !show);
+  if (show) {
+    const f = settings.getFolder();
+    els.folderName.textContent = f?.name || 'ReadItOn';
   }
 }
 
@@ -136,13 +164,13 @@ function renderAccountState() {
         <div><strong>${escapeHtml(p?.name || 'Signed in')}</strong><br/>
         <span class="muted">${escapeHtml(p?.email || '')}</span></div>
       </div>
-      <button class="btn ghost" id="disconnect-btn">Disconnect</button>`;
-    $('disconnect-btn').addEventListener('click', () => { auth.signOut(); toast('Disconnected. Back to on-device library.'); });
+      <button class="btn ghost" id="disconnect-btn">Sign out</button>`;
+    $('disconnect-btn').addEventListener('click', () => { auth.signOut(); toast('Signed out.'); });
   } else {
     const hasDrive = settings.hasDrive();
     els.accountState.innerHTML = `
-      <div class="muted" style="line-height:1.5">Your notes are saved in this browser.
-        ${hasDrive ? 'Connect Google Drive to sync them across all your devices.' : 'Drive sync isn’t configured for this site yet (see Advanced).'}</div>
+      <div class="muted" style="line-height:1.5">Your papers and notes are stored in your Google Drive.
+        ${hasDrive ? 'Sign in to open your library.' : 'Drive isn’t configured for this site yet (see Advanced).'}</div>
       <button class="btn" id="connect-btn2"><svg class="ic"><use href="#i-cloud"/></svg><span>Connect Google Drive</span></button>`;
     $('connect-btn2').addEventListener('click', connectDrive);
   }
@@ -157,18 +185,9 @@ async function connectDrive() {
   }
   try {
     setSync('Connecting…');
-    const localPapers = await localBackend.listPapers();
-    await auth.signIn(); // triggers onChange -> switches to Drive + loads library
+    await auth.signIn(); // triggers onChange -> loads library
     els.settingsModal.classList.add('hidden');
-
-    if (localPapers.length &&
-        confirm(`Upload your ${localPapers.length} on-device paper(s) to Google Drive so they sync everywhere?`)) {
-      setSync('Uploading to Drive…');
-      const res = await migrateLocalToDrive(backend);
-      toast(`Uploaded ${res.ok}/${res.total} paper(s) to Drive`);
-      await loadLibrary();
-    }
-    setSync(savedLabel(), 'ok');
+    setSync('');
   } catch (e) {
     setSync('');
     toast('Could not connect: ' + (e?.message || e));
@@ -176,7 +195,25 @@ async function connectDrive() {
 }
 
 els.connectBtn.addEventListener('click', connectDrive);
+$('gate-connect').addEventListener('click', connectDrive);
 els.userChip.addEventListener('click', openSettings);
+
+// ================= Folder picker =================
+els.folderChip.addEventListener('click', chooseFolder);
+async function chooseFolder() {
+  try {
+    const picked = await pickFolder();
+    if (picked) {
+      settings.setFolder(picked);
+      renderFolderChip();
+      toast(`Folder set to “${picked.name}”`);
+      await loadLibrary();
+    }
+  } catch (e) {
+    if (e?.message === 'NO_API_KEY') toast('Folder picker needs a Google API key (see SETUP.md).');
+    else toast('Could not open picker: ' + (e?.message || e));
+  }
+}
 
 // ================= Settings =================
 function openSettings() {
@@ -195,6 +232,7 @@ $('save-settings').addEventListener('click', () => {
 
 // ================= Library =================
 async function loadLibrary() {
+  if (!auth.isSignedIn()) return;
   try {
     setSync('Loading…');
     const papers = await backend.listPapers();
@@ -202,7 +240,7 @@ async function loadLibrary() {
     setSync('');
   } catch (e) {
     setSync('');
-    toast('Could not load library: ' + e.message);
+    toast('Could not load library: ' + (e?.message || e));
   }
 }
 
@@ -234,6 +272,7 @@ function renderLibrary(papers) {
 }
 
 async function importFiles(fileList) {
+  if (!auth.isSignedIn()) { toast('Connect Google Drive first.'); return; }
   const pdfs = [...fileList].filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
   if (!pdfs.length) { toast('Please choose PDF files'); return; }
   for (const f of pdfs) {
@@ -243,7 +282,7 @@ async function importFiles(fileList) {
       await backend.importPdf(f.name, buf);
     } catch (e) { toast(`Import failed for ${f.name}: ${e.message}`); }
   }
-  setSync(savedLabel(), 'ok');
+  setSync('');
   toast(`Imported ${pdfs.length} file${pdfs.length > 1 ? 's' : ''}`);
   await loadLibrary();
 }
@@ -251,8 +290,7 @@ els.fileInput.addEventListener('change', (e) => { importFiles(e.target.files); e
 els.dropzone.addEventListener('click', () => els.fileInput.click());
 
 async function deletePaper(p) {
-  const where = backend.kind === 'drive' ? 'Google Drive (moves to trash)' : 'this device';
-  if (!confirm(`Remove “${p.name.replace(/\.pdf$/i, '')}” and its notes from ${where}?`)) return;
+  if (!confirm(`Remove “${p.name.replace(/\.pdf$/i, '')}” and its notes from Google Drive (moves to trash)?`)) return;
   try { await backend.deletePaper(p); await loadLibrary(); }
   catch (e) { toast('Delete failed: ' + e.message); }
 }
@@ -275,19 +313,17 @@ async function openPaper(p) {
 
     viewer = new PdfViewer(els.pdfScroll);
     annot = new AnnotationManager(viewer, {
-      color: settings.getInkColor(),
+      color: settings.getToolColor('highlight'),
       notesListEl: els.notesList,
-      onDirty: () => { setSync('Saving…'); saveDebounced(); },
+      onDirty: () => markDirty(),
       onToolReset: () => activateTool('select'),
     });
     activateTool('select');
-    els.inkColor.value = settings.getInkColor();
-    highlightSwatch(settings.getInkColor());
 
     await viewer.load(state.pdfBytes.slice(0));
     annot.setData(annotations);
     updateZoomLabel();
-    setSync(savedLabel(), 'ok');
+    markSaved();
   } catch (e) {
     setSync('');
     toast('Could not open: ' + e.message);
@@ -295,30 +331,45 @@ async function openPaper(p) {
   }
 }
 
-function backToLibrary() {
-  if (annot && state.paper) saveDebounced.flush();
+async function backToLibrary() {
+  if (dirty && annot && state.paper) {
+    if (confirm('Save your changes to Google Drive before leaving?')) await doSave();
+  }
   if (annot) annot.destroy();
   if (viewer) viewer.destroy();
-  viewer = null; annot = null;
+  viewer = null; annot = null; dirty = false;
   els.viewerView.classList.add('hidden');
   els.viewerControls.classList.add('hidden');
   els.libraryView.classList.remove('hidden');
   els.notesPanel.classList.add('hidden');
+  setSync('');
   loadLibrary();
 }
 $('back-to-library').addEventListener('click', backToLibrary);
 $('brand').addEventListener('click', (e) => { e.preventDefault(); if (!els.viewerView.classList.contains('hidden')) backToLibrary(); });
+els.saveBtn.addEventListener('click', doSave);
 
 // ================= Toolbar =================
 function activateTool(tool) {
+  currentTool = tool;
   if (annot) annot.setTool(tool);
   els.pdfScroll.className = `pdf-scroll tool-${tool}`;
   document.querySelectorAll('#annotation-tools .tool').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+
+  const hasColor = COLOR_TOOLS.includes(tool);
+  els.annotTools.classList.toggle('no-color', !hasColor);
+  if (hasColor) {
+    // Preselect this tool's color the moment the tool is chosen.
+    const c = settings.getToolColor(tool);
+    if (annot) annot.setColor(c);
+    els.inkColor.value = c;
+    highlightSwatch(c);
+  }
 }
 document.querySelectorAll('#annotation-tools .tool').forEach(btn =>
   btn.addEventListener('click', () => activateTool(btn.dataset.tool)));
 
-// color swatches
+// color swatches — apply to the currently selected tool
 function buildSwatches() {
   els.swatches.innerHTML = '';
   for (const c of DEFAULT_COLORS) {
@@ -332,7 +383,8 @@ function buildSwatches() {
   }
 }
 function setColor(c) {
-  settings.setInkColor(c);
+  const tool = COLOR_TOOLS.includes(currentTool) ? currentTool : 'highlight';
+  settings.setToolColor(tool, c);
   if (annot) annot.setColor(c);
   els.inkColor.value = c;
   highlightSwatch(c);
@@ -355,20 +407,35 @@ $('export-pdf').addEventListener('click', async () => {
   try {
     setSync('Exporting…');
     await exportAnnotatedPdf(state.pdfBytes.slice(0), annot.getData().annotations, state.paper.name);
-    setSync(savedLabel(), 'ok');
+    setSync(dirty ? '● Unsaved changes' : '✓ Saved', dirty ? 'dirty' : 'ok');
   } catch (e) { toast('Export failed: ' + e.message); setSync(''); }
 });
 
 // ================= Keyboard =================
 const TOOL_KEYS = { v: 'select', h: 'highlight', u: 'underline', n: 'note', p: 'freehand', t: 'text' };
 document.addEventListener('keydown', (e) => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  const editable = tag === 'input' || tag === 'textarea' || e.target.isContentEditable;
+
+  // Undo — Ctrl/Cmd+Z (let native undo run inside text fields)
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
+    if (editable) return;
+    if (annot) { e.preventDefault(); if (!annot.undo()) toast('Nothing to undo'); }
+    return;
+  }
+  // Save — Ctrl/Cmd+S
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+    e.preventDefault();
+    if (annot && state.paper) doSave();
+    return;
+  }
+
   if (e.key === 'Escape') {
     if (!els.settingsModal.classList.contains('hidden')) els.settingsModal.classList.add('hidden');
     else if (annot) activateTool('select');
     return;
   }
-  const tag = (e.target.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable || e.metaKey || e.ctrlKey) return;
+  if (editable || e.metaKey || e.ctrlKey) return;
   if (annot && TOOL_KEYS[e.key]) { activateTool(TOOL_KEYS[e.key]); }
 });
 
@@ -376,18 +443,20 @@ document.addEventListener('keydown', (e) => {
 let dragDepth = 0;
 window.addEventListener('dragenter', (e) => {
   if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+  if (!auth.isSignedIn()) return;
   dragDepth++; els.dropOverlay.classList.remove('hidden');
 });
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; els.dropOverlay.classList.add('hidden'); } });
 window.addEventListener('drop', (e) => {
   e.preventDefault(); dragDepth = 0; els.dropOverlay.classList.add('hidden');
+  if (!auth.isSignedIn()) return;
   if (e.dataTransfer.files?.length) {
     if (!els.viewerView.classList.contains('hidden')) backToLibrary();
     importFiles(e.dataTransfer.files);
   }
 });
-window.addEventListener('beforeunload', () => saveDebounced.flush());
+window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // ================= Helpers =================
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -409,12 +478,12 @@ function shortDate(iso) {
 async function boot() {
   applyTheme();
   buildSwatches();
-  highlightSwatch(settings.getInkColor());
-  els.inkColor.value = settings.getInkColor();
   updateAccountUI();
-  await loadLibrary();
-  // Silently reconnect Drive only if the user connected before (avoids popups for new visitors).
-  if (settings.hasDrive() && localStorage.getItem(K_DRIVE_FLAG)) {
+  renderGate();
+  if (auth.isSignedIn()) {
+    await loadLibrary();
+  } else if (settings.hasDrive()) {
+    // Returning user whose token expired: refresh silently (no popup).
     auth.trySilentSignIn();
   }
 }

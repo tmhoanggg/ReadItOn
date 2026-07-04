@@ -85,6 +85,8 @@ a { color: inherit; text-decoration: none; }
 .btn.ghost:hover { background: var(--surface-2); }
 .btn.danger { background: transparent; color: var(--danger); box-shadow: none; padding: 8px; }
 .btn.danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.btn.big { position: relative; font-size: 15px; padding: 12px 22px; border-radius: 12px; }
+.btn.big .ic { width: 18px; height: 18px; }
 
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -102,6 +104,7 @@ a { color: inherit; text-decoration: none; }
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.01em; }
 .logo-mark svg { width: 30px; height: 30px; display: block; border-radius: 9px; box-shadow: var(--shadow-sm); }
+.logo-mark img { width: 30px; height: 30px; display: block; border-radius: 9px; box-shadow: var(--shadow-sm); background: #fff; object-fit: contain; }
 .brand-name { font-size: 17px; }
 .brand-accent { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
@@ -137,6 +140,17 @@ a { color: inherit; text-decoration: none; }
 .sync-status { font-size: 12px; color: var(--muted); min-width: 0; padding: 0 4px; display: inline-flex; align-items: center; gap: 5px; }
 .sync-status.ok { color: #12a150; }
 .sync-status.warn { color: var(--danger); }
+.sync-status.dirty { color: #d98a00; }
+
+/* Save button glows amber while there are unsaved changes */
+#save-drive.has-unsaved {
+  background: #f5a300; border-color: #f5a300; color: #1c1300;
+  box-shadow: 0 2px 10px color-mix(in srgb, #f5a300 45%, transparent);
+}
+/* Hide the color swatches when a non-coloring tool (Select) is active */
+#annotation-tools.no-color .swatches,
+#annotation-tools.no-color #ink-color,
+#annotation-tools.no-color .tool-sep { display: none; }
 .user-chip {
   display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px;
   border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
@@ -164,6 +178,16 @@ a { color: inherit; text-decoration: none; }
 .storage-pill.synced { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); background: var(--accent-weak); }
 .storage-pill a { color: var(--accent); font-weight: 600; }
 
+.lib-subrow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.folder-chip {
+  display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 12.5px; color: var(--text);
+  padding: 5px 11px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; cursor: pointer;
+}
+.folder-chip:hover { background: var(--surface-3); }
+.folder-chip .ic { width: 15px; height: 15px; color: var(--accent); }
+.folder-chip small { color: var(--muted); font-size: 11px; padding-left: 2px; }
+.folder-chip #folder-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Hero / empty state */
 .hero {
   position: relative; text-align: center; padding: 34px 20px 44px; margin: 8px 0 20px;
@@ -175,6 +199,11 @@ a { color: inherit; text-decoration: none; }
   width: 520px; height: 320px; border-radius: 50%;
   background: radial-gradient(closest-side, rgba(123,108,255,.28), transparent 70%);
   filter: blur(10px); pointer-events: none;
+}
+.hero-logo {
+  position: relative; display: block; width: 120px; height: 120px; margin: 2px auto 16px;
+  border-radius: 26px; background: #fff; object-fit: contain;
+  box-shadow: 0 12px 32px rgba(20, 20, 50, .18); border: 1px solid var(--border);
 }
 .hero-badge {
   position: relative; display: inline-block; font-size: 12.5px; font-weight: 600; color: var(--accent);

@@ -1,9 +1,16 @@
 // Google sign-in via Google Identity Services (GIS) token client.
-// We request an OAuth access token for the Drive `drive.file` scope and keep
-// it in memory. Interactive sign-in shows Google's popup; a silent attempt
-// (prompt:'none') can restore a session for returning users with no UI.
+// We request an OAuth access token for the Drive `drive.file` scope.
+//
+// The token (and the fetched profile) are persisted in localStorage so a
+// page reload keeps the user signed in without any popup, for as long as
+// the token is valid (~1h). When it expires we refresh it silently
+// (prompt:'none'), which needs no UI while the user's Google session is
+// alive. drive.file is a low-risk scope, so caching the token locally is
+// an acceptable trade-off for this personal tool.
 import { SCOPES } from './config.js';
 import { settings } from './store.js';
+
+const K_SESSION = 'readiton.session';
 
 let tokenClient = null;
 let accessToken = null;
@@ -11,6 +18,27 @@ let tokenExpiry = 0;          // epoch ms
 let profile = null;          // { email, name, picture }
 let onChangeCb = () => {};
 let pending = null;          // { resolve, reject } for the in-flight token request
+
+// ---- Session persistence ----
+(function restoreSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem(K_SESSION) || 'null');
+    if (s && s.accessToken && Date.now() < s.tokenExpiry) {
+      accessToken = s.accessToken;
+      tokenExpiry = s.tokenExpiry;
+      profile = s.profile || null;
+    }
+  } catch { /* ignore corrupt session */ }
+})();
+
+function persistSession() {
+  try {
+    localStorage.setItem(K_SESSION, JSON.stringify({ accessToken, tokenExpiry, profile }));
+  } catch { /* storage full / disabled — non-fatal */ }
+}
+function clearSession() {
+  try { localStorage.removeItem(K_SESSION); } catch {}
+}
 
 function waitForGis() {
   return new Promise((resolve, reject) => {
@@ -77,6 +105,7 @@ export const auth = {
   isSignedIn() { return !!accessToken && Date.now() < tokenExpiry; },
   getProfile() { return profile; },
   getEmail() { return profile?.email || null; },
+  getAccessToken() { return this.isSignedIn() ? accessToken : null; },
   onChange(cb) { onChangeCb = cb; },
 
   // Interactive: shows Google's account chooser / consent as needed.
@@ -84,6 +113,7 @@ export const auth = {
     await ensureClient();
     await requestToken('');
     await fetchProfile();
+    persistSession();
     onChangeCb();
   },
 
@@ -93,6 +123,7 @@ export const auth = {
       await ensureClient();
       await requestToken('none');
       await fetchProfile();
+      persistSession();
       onChangeCb();
       return true;
     } catch {
@@ -105,7 +136,7 @@ export const auth = {
       try { window.google.accounts.oauth2.revoke(accessToken, () => {}); } catch {}
     }
     accessToken = null; tokenExpiry = 0; profile = null;
-    localStorage.removeItem('readiton.driveConnected');
+    clearSession();
     onChangeCb();
   },
 
@@ -113,7 +144,11 @@ export const auth = {
   async getToken() {
     if (this.isSignedIn()) return accessToken;
     await ensureClient();
-    await requestToken('');
+    // Try silent first (no popup); fall back to interactive.
+    try { await requestToken('none'); }
+    catch { await requestToken(''); }
+    await fetchProfile();
+    persistSession();
     return accessToken;
   },
 };

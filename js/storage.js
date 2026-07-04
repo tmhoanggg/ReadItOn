@@ -1,7 +1,7 @@
-// Storage backends behind one interface so the app doesn't care where papers
-// live. Two implementations:
-//   • local  — IndexedDB in the browser (default, zero setup, this-device-only)
-//   • drive  — the user's Google Drive (optional, syncs across devices)
+// Storage backend: the user's Google Drive is the single source of truth.
+// Papers (and their notes) live in the Drive folder the user chose via the
+// picker, or — when no picker/API key is configured — an auto-created
+// "ReadItOn" folder.
 //
 // Interface (all async):
 //   kind
@@ -10,60 +10,22 @@
 //   openPaper(paper)           -> { bytes: ArrayBuffer, annotations: {...} }
 //   saveAnnotations(paper,data)
 //   deletePaper(paper)
-import { idbGet, idbGetAll, idbPut, idbDelete } from './db.js';
 import { drive } from './drive.js';
-import { uid } from './store.js';
+import { settings } from './store.js';
 
 function emptyAnnots() { return { version: 1, annotations: [] }; }
 
-export function createLocalBackend() {
-  return {
-    kind: 'local',
-
-    async listPapers() {
-      const rows = await idbGetAll('papers');
-      return rows.sort((a, b) => (b.modifiedTime || '').localeCompare(a.modifiedTime || ''));
-    },
-
-    async importPdf(name, buffer) {
-      const id = uid();
-      const now = new Date().toISOString();
-      const meta = { id, name, modifiedTime: now, createdAt: now, size: buffer.byteLength };
-      await idbPut('pdfs', { id, blob: new Blob([buffer], { type: 'application/pdf' }) });
-      await idbPut('annots', { id, data: { ...emptyAnnots(), pdfName: name } });
-      await idbPut('papers', meta);
-      return meta;
-    },
-
-    async openPaper(paper) {
-      const rec = await idbGet('pdfs', paper.id);
-      const ann = await idbGet('annots', paper.id);
-      const bytes = await rec.blob.arrayBuffer();
-      const annotations = ann?.data && Array.isArray(ann.data.annotations) ? ann.data : emptyAnnots();
-      return { bytes, annotations };
-    },
-
-    async saveAnnotations(paper, data) {
-      await idbPut('annots', { id: paper.id, data });
-      const meta = await idbGet('papers', paper.id);
-      if (meta) { meta.modifiedTime = new Date().toISOString(); await idbPut('papers', meta); }
-    },
-
-    async deletePaper(paper) {
-      await idbDelete('pdfs', paper.id);
-      await idbDelete('annots', paper.id);
-      await idbDelete('papers', paper.id);
-    },
-  };
-}
-
 export function createDriveBackend() {
-  let folderId = null;
-  const annotFileIds = new Map(); // paperId -> annotations file id
+  let libraryFolderId = null;              // lazily-created fallback folder
+  const annotFileIds = new Map();          // paperId -> annotations file id
 
+  // The folder papers are stored in: the user's chosen folder, else the
+  // auto "ReadItOn" folder.
   async function folder() {
-    if (!folderId) folderId = await drive.getLibraryFolderId();
-    return folderId;
+    const chosen = settings.getFolder();
+    if (chosen?.id) return chosen.id;
+    if (!libraryFolderId) libraryFolderId = await drive.getLibraryFolderId();
+    return libraryFolderId;
   }
 
   return {
@@ -109,24 +71,4 @@ export function createDriveBackend() {
       await drive.trash(paper.id);
     },
   };
-}
-
-// Copy every paper in the local library into Drive (best effort, per-paper).
-export async function migrateLocalToDrive(driveBackend) {
-  const local = createLocalBackend();
-  const papers = await local.listPapers();
-  let ok = 0;
-  for (const p of papers) {
-    try {
-      const { bytes, annotations } = await local.openPaper(p);
-      const created = await driveBackend.importPdf(p.name, bytes);
-      if (annotations.annotations?.length) {
-        await driveBackend.saveAnnotations(created, annotations);
-      }
-      ok++;
-    } catch (e) {
-      console.warn('Migrate failed for', p.name, e);
-    }
-  }
-  return { total: papers.length, ok };
 }

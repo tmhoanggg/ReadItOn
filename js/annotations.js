@@ -17,6 +17,8 @@ export class AnnotationManager {
   constructor(viewer, opts = {}) {
     this.viewer = viewer;
     this.data = { version: 1, annotations: [] };
+    this._history = [];        // undo stack of annotation snapshots (JSON)
+    this._maxHistory = 100;
     this.tool = 'select';
     this.color = opts.color || '#ffd400';
     this.onDirty = opts.onDirty || (() => {});
@@ -48,6 +50,7 @@ export class AnnotationManager {
     this.data = data && Array.isArray(data.annotations)
       ? data
       : { version: 1, annotations: [] };
+    this._history = [];   // fresh document → nothing to undo
     for (const rec of this.viewer.pages) if (rec) this.renderPage(rec);
     this.refreshPanel();
   }
@@ -64,7 +67,30 @@ export class AnnotationManager {
 
   _forPage(n) { return this.data.annotations.filter(a => a.page === n); }
 
+  // ---- Undo ----
+  // Snapshot the annotations array before a mutation so it can be reverted.
+  _pushHistory() {
+    this._history.push(JSON.stringify(this.data.annotations));
+    if (this._history.length > this._maxHistory) this._history.shift();
+  }
+
+  canUndo() { return this._history.length > 0; }
+
+  undo() {
+    if (!this._history.length) return false;
+    let prev;
+    try { prev = JSON.parse(this._history.pop()); } catch { return false; }
+    this.data.annotations = prev;
+    this.noteEditor.el.classList.add('hidden');
+    this.noteEditor.current = null;
+    for (const rec of this.viewer.pages) if (rec) this.renderPage(rec);
+    this.refreshPanel();
+    this._markDirty();
+    return true;
+  }
+
   add(annotation) {
+    this._pushHistory();
     this.data.annotations.push(annotation);
     const rec = this.viewer.pages[annotation.page];
     if (rec) this.renderPage(rec);
@@ -75,6 +101,7 @@ export class AnnotationManager {
   remove(id) {
     const idx = this.data.annotations.findIndex(a => a.id === id);
     if (idx < 0) return;
+    this._pushHistory();
     const page = this.data.annotations[idx].page;
     this.data.annotations.splice(idx, 1);
     const rec = this.viewer.pages[page];
