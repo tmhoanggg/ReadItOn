@@ -15,6 +15,8 @@ papers — with everything synced to your own Google Drive, on every device.**
 
 - **Annotate any PDF** — highlight, underline, sticky notes, freehand pen, and typed text boxes.
 - **Pick your color instantly** — each tool opens with its own color, ready to change in one click.
+- **Edit any mark** — click a highlight, underline or drawing to recolor or delete it.
+- **Undo & redo** — step back and forward through your annotations from the toolbar or keyboard.
 - **Everything in your Google Drive** — your papers and notes are stored in a folder you choose, so they follow you to every device.
 - **Undo mistakes** — `Ctrl/⌘ + Z` steps back through your annotations.
 - **Save when you're ready** — click **Save** (or `Ctrl/⌘ + S`) to write your changes to Drive.
@@ -39,11 +41,12 @@ whole library is right there.
 
 | Key | Action | | Key | Action |
 |-----|--------|-|-----|--------|
-| `V` | Select / read | | `T` | Text box |
-| `H` | Highlight | | `Esc` | Back to select |
-| `U` | Underline | | `Ctrl/⌘ + Z` | Undo |
-| `N` | Sticky note | | `Ctrl/⌘ + S` | Save to Drive |
-| `P` | Freehand pen | | | |
+| `V` | Select / read | | `Esc` | Deselect / back to select |
+| `H` | Highlight | | `Ctrl/⌘ + Z` | Undo |
+| `U` | Underline | | `Ctrl/⌘ + Shift + Z` | Redo |
+| `N` | Sticky note | | `Del` | Delete selected mark |
+| `P` | Freehand pen | | `Ctrl/⌘ + S` | Save to Drive |
+| `T` | Text box | | | |
 
 ---
 

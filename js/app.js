@@ -364,7 +364,7 @@ els.redoBtn.addEventListener('click', () => { if (annot) annot.redo(); });
 // ================= Toolbar =================
 function activateTool(tool) {
   currentTool = tool;
-  if (annot) annot.setTool(tool);
+  if (annot) { annot.clearSelection(); annot.setTool(tool); }
   els.pdfScroll.className = `pdf-scroll tool-${tool}`;
   document.querySelectorAll('#annotation-tools .tool').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
 
@@ -448,8 +448,14 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Delete the selected mark
+  if ((e.key === 'Delete' || e.key === 'Backspace') && !editable) {
+    if (annot && annot.hasSelection()) { e.preventDefault(); annot.deleteSelected(); return; }
+  }
+
   if (e.key === 'Escape') {
     if (!els.settingsModal.classList.contains('hidden')) els.settingsModal.classList.add('hidden');
+    else if (annot && annot.hasSelection()) annot.clearSelection();
     else if (annot) activateTool('select');
     return;
   }

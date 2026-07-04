@@ -4,8 +4,29 @@
 // page width/height) so annotations render correctly at any zoom and on any
 // screen. Rendering multiplies by the current page pixel size.
 import { uid } from './store.js';
+import { DEFAULT_COLORS } from './config.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
+
+// Merge text-selection rects into one clean bar per line (fixes fragmented
+// highlights). Rects are normalized [x, y, w, h].
+function mergeRowRects(rects) {
+  const rows = [];
+  for (const [x, y, w, h] of [...rects].sort((a, b) => a[1] - b[1] || a[0] - b[0])) {
+    const row = rows.find(r => Math.abs((y + h / 2) - (r.y + r.h / 2)) < Math.max(h, r.h) * 0.6);
+    if (row) {
+      const right = Math.max(row.x + row.w, x + w);
+      const bottom = Math.max(row.y + row.h, y + h);
+      row.x = Math.min(row.x, x);
+      row.y = Math.min(row.y, y);
+      row.w = right - row.x;
+      row.h = bottom - row.y;
+    } else {
+      rows.push({ x, y, w, h });
+    }
+  }
+  return rows.map(r => [r.x, r.y, r.w, r.h]);
+}
 
 function hexToRgba(hex, alpha) {
   const h = hex.replace('#', '');
@@ -36,16 +57,36 @@ export class AnnotationManager {
     };
     this._wireNoteEditor();
 
+    // Selecting an existing mark (highlight/underline/drawing) shows a popup
+    // to recolor or delete it.
+    this.selected = null;
+    this.annotPopup = {
+      el: document.getElementById('annot-popup'),
+      swatches: document.getElementById('annot-popup-swatches'),
+      del: document.getElementById('annot-popup-delete'),
+    };
+    this._wireAnnotPopup();
+
     // Global mouseup handles text-selection based tools (highlight/underline).
     this._onMouseUp = () => this._handleTextSelection();
     document.addEventListener('mouseup', this._onMouseUp);
+
+    // Click outside a selected mark / its popup clears the selection.
+    this._onDocMouseDown = (e) => {
+      if (!this.selected) return;
+      if (e.target.closest('#annot-popup') || e.target.closest('[data-annot-id]')) return;
+      this.clearSelection();
+    };
+    document.addEventListener('mousedown', this._onDocMouseDown);
 
     viewer.onPageRendered = (rec) => this.attachPage(rec);
   }
 
   destroy() {
     document.removeEventListener('mouseup', this._onMouseUp);
+    document.removeEventListener('mousedown', this._onDocMouseDown);
     this.noteEditor.el.classList.add('hidden');
+    if (this.annotPopup.el) this.annotPopup.el.classList.add('hidden');
   }
 
   setData(data) {
@@ -54,6 +95,8 @@ export class AnnotationManager {
       : { version: 1, annotations: [] };
     this._history = [];   // fresh document → nothing to undo
     this._redo = [];
+    this.selected = null;
+    if (this.annotPopup?.el) this.annotPopup.el.classList.add('hidden');
     for (const rec of this.viewer.pages) if (rec) this.renderPage(rec);
     this.refreshPanel();
     this.onHistoryChange();
@@ -85,6 +128,8 @@ export class AnnotationManager {
 
   _restore(snapshot) {
     try { this.data.annotations = JSON.parse(snapshot); } catch { return false; }
+    this.selected = null;
+    if (this.annotPopup.el) this.annotPopup.el.classList.add('hidden');
     this.noteEditor.el.classList.add('hidden');
     this.noteEditor.current = null;
     for (const rec of this.viewer.pages) if (rec) this.renderPage(rec);
@@ -129,6 +174,90 @@ export class AnnotationManager {
     this.onHistoryChange();
   }
 
+  // ---- Select / recolor / delete an existing mark ----
+  _wireAnnotPopup() {
+    const ap = this.annotPopup;
+    if (!ap.el) return;
+    ap.swatches.innerHTML = '';
+    for (const c of DEFAULT_COLORS) {
+      const s = document.createElement('button');
+      s.className = 'swatch';
+      s.style.background = c;
+      s.dataset.color = c;
+      s.title = c;
+      s.addEventListener('click', () => { if (this.selected) this.updateColor(this.selected, c); });
+      ap.swatches.appendChild(s);
+    }
+    ap.del.addEventListener('click', () => this.deleteSelected());
+  }
+
+  _paintSelection() {
+    for (const rec of this.viewer.pages) {
+      if (!rec) continue;
+      rec.annotLayer.querySelectorAll('.sel').forEach(el => el.classList.remove('sel'));
+      if (this.selected) {
+        rec.annotLayer.querySelectorAll(`[data-annot-id="${this.selected}"]`).forEach(el => el.classList.add('sel'));
+      }
+    }
+  }
+
+  _selectMark(a, ev) {
+    this.selected = a.id;
+    this._paintSelection();
+    const ap = this.annotPopup;
+    if (!ap.el) return;
+    ap.swatches.querySelectorAll('.swatch').forEach(s =>
+      s.classList.toggle('active', (s.dataset.color || '').toLowerCase() === (a.color || '').toLowerCase()));
+    ap.el.classList.remove('hidden');
+    const w = ap.el.offsetWidth || 220, h = ap.el.offsetHeight || 44;
+    const left = Math.min(window.innerWidth - w - 8, Math.max(8, ev.clientX - w / 2));
+    let top = ev.clientY + 14;
+    if (top + h > window.innerHeight - 8) top = ev.clientY - h - 14;
+    ap.el.style.left = `${left}px`;
+    ap.el.style.top = `${top}px`;
+  }
+
+  clearSelection() {
+    if (!this.selected) return;
+    this.selected = null;
+    this._paintSelection();
+    if (this.annotPopup.el) this.annotPopup.el.classList.add('hidden');
+  }
+
+  hasSelection() { return !!this.selected; }
+
+  deleteSelected() {
+    if (!this.selected) return;
+    const id = this.selected;
+    this.clearSelection();
+    this.remove(id);
+  }
+
+  updateColor(id, color) {
+    const a = this.data.annotations.find(x => x.id === id);
+    if (!a) return;
+    this._pushHistory();
+    a.color = color;
+    const rec = this.viewer.pages[a.page];
+    if (rec) this.renderPage(rec);
+    this._paintSelection();
+    const ap = this.annotPopup;
+    if (ap.el) ap.swatches.querySelectorAll('.swatch').forEach(s =>
+      s.classList.toggle('active', (s.dataset.color || '').toLowerCase() === color.toLowerCase()));
+    this.refreshPanel();
+    this._markDirty();
+    this.onHistoryChange();
+  }
+
+  // Attach a select-on-click handler to a rendered mark element.
+  _wireMarkClick(el, a) {
+    el.addEventListener('click', (e) => {
+      if (this.tool !== 'select') return;
+      e.stopPropagation();
+      this._selectMark(a, e);
+    });
+  }
+
   // ---- Per-page wiring + rendering ----
   attachPage(rec) {
     this._wireCapture(rec);
@@ -157,6 +286,7 @@ export class AnnotationManager {
       d.style.width = `${w * rec.width}px`;
       d.style.height = `${h * rec.height}px`;
       d.style.background = hexToRgba(a.color, 0.4);
+      this._wireMarkClick(d, a);
       rec.annotLayer.appendChild(d);
     }
   }
@@ -171,6 +301,7 @@ export class AnnotationManager {
       d.style.width = `${w * rec.width}px`;
       d.style.height = `2px`;
       d.style.background = a.color;
+      this._wireMarkClick(d, a);
       rec.annotLayer.appendChild(d);
     }
   }
@@ -185,8 +316,18 @@ export class AnnotationManager {
     poly.setAttribute('stroke-width', String(Math.max(1, a.width * rec.width)));
     poly.setAttribute('stroke-linecap', 'round');
     poly.setAttribute('stroke-linejoin', 'round');
-    poly.setAttribute('points', a.points.map(([x, y]) => `${x * rec.width},${y * rec.height}`).join(' '));
+    const pts = a.points.map(([x, y]) => `${x * rec.width},${y * rec.height}`).join(' ');
+    poly.setAttribute('points', pts);
     svg.appendChild(poly);
+    // Invisible thick line gives a comfortable click target for selection.
+    const hit = document.createElementNS(SVGNS, 'polyline');
+    hit.setAttribute('fill', 'none');
+    hit.setAttribute('stroke', 'transparent');
+    hit.setAttribute('stroke-width', String(Math.max(12, a.width * rec.width + 10)));
+    hit.setAttribute('points', pts);
+    hit.classList.add('fh-hit');
+    this._wireMarkClick(hit, a);
+    svg.appendChild(hit);
     rec.annotLayer.appendChild(svg);
   }
 
@@ -333,7 +474,7 @@ export class AnnotationManager {
       type: this.tool,
       page: rec.pageNumber,
       color: this.color,
-      rects,
+      rects: mergeRowRects(rects),
     });
     sel.removeAllRanges();
   }

@@ -298,6 +298,28 @@ a { color: inherit; text-decoration: none; }
 .annot-ul { position: absolute; }
 .annot-freehand { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 
+/* In Select mode, existing marks are clickable so they can be recolored/deleted */
+.tool-select .annot-hl,
+.tool-select .annot-ul { pointer-events: auto; cursor: pointer; }
+.tool-select .annot-freehand .fh-hit { pointer-events: stroke; cursor: pointer; }
+.annot-hl.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.annot-ul.sel { outline: 2px solid var(--accent); outline-offset: 3px; }
+.annot-freehand.sel polyline { filter: drop-shadow(0 0 2px var(--accent)); }
+
+.annot-popup {
+  position: fixed; z-index: 110; display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 8px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow-lg);
+}
+.ap-swatches { display: inline-flex; gap: 4px; }
+.ap-sep { width: 1px; height: 18px; background: var(--border); }
+.ap-del {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border-radius: 7px; border: none; background: transparent; color: var(--danger); cursor: pointer;
+}
+.ap-del .ic { width: 16px; height: 16px; }
+.ap-del:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
 .capture-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
 .tool-freehand .capture-layer { pointer-events: auto; cursor: crosshair; }
 .tool-text .capture-layer { pointer-events: auto; cursor: text; }
