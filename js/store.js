@@ -1,5 +1,5 @@
 // Tiny localStorage-backed settings + helpers.
-import { CLIENT_ID, API_KEY, TOOL_COLORS } from './config.js';
+import { CLIENT_ID, TOOL_COLORS } from './config.js';
 
 const K_CLIENT_ID = 'readiton.clientId'; // optional per-browser override
 const K_COLOR = 'readiton.color.';       // + tool name
@@ -18,11 +18,6 @@ export const settings = {
   },
   getClientIdOverride() { return (localStorage.getItem(K_CLIENT_ID) || '').trim(); },
   hasDrive() { return !!this.getClientId(); },
-
-  // The folder picker needs an API key; without it we fall back to an
-  // auto-created "ReadItOn" folder.
-  getApiKey() { return (API_KEY || '').trim(); },
-  hasPicker() { return !!this.getApiKey(); },
 
   // Per-tool ink color (preselected when a tool is chosen).
   getToolColor(tool) {

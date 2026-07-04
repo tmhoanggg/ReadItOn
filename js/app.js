@@ -7,7 +7,7 @@ import { exportAnnotatedPdf } from './export.js';
 import { settings, toast } from './store.js';
 import { DEFAULT_COLORS } from './config.js';
 import { createDriveBackend } from './storage.js';
-import { pickFolder } from './picker.js';
+import { pickFolderInApp, initFolderBrowser } from './folderBrowser.js';
 
 const $ = (id) => document.getElementById(id);
 const K_THEME = 'readiton.theme';
@@ -148,7 +148,7 @@ function renderStoragePill() {
 }
 
 function renderFolderChip() {
-  const show = auth.isSignedIn() && settings.hasPicker();
+  const show = auth.isSignedIn();
   els.folderChip.classList.toggle('hidden', !show);
   if (show) {
     const f = settings.getFolder();
@@ -204,16 +204,15 @@ els.userChip.addEventListener('click', openSettings);
 els.folderChip.addEventListener('click', chooseFolder);
 async function chooseFolder() {
   try {
-    const picked = await pickFolder();
+    const picked = await pickFolderInApp();
     if (picked) {
       settings.setFolder(picked);
       renderFolderChip();
-      toast(`Folder set to “${picked.name}”`);
+      toast(`Folder set to “${picked.path || picked.name}”`);
       await loadLibrary();
     }
   } catch (e) {
-    if (e?.message === 'NO_API_KEY') toast('Folder picker needs a Google API key (see SETUP.md).');
-    else toast('Could not open picker: ' + (e?.message || e));
+    toast('Could not open folder browser: ' + (e?.message || e));
   }
 }
 
@@ -502,6 +501,7 @@ function shortDate(iso) {
 async function boot() {
   applyTheme();
   buildSwatches();
+  initFolderBrowser();
   updateAccountUI();
   renderGate();
   if (auth.isSignedIn()) {

@@ -1,6 +1,6 @@
 // Thin wrapper over the Google Drive v3 REST API.
-// Uses `drive.file` scope: we can only see files this app created — which is
-// exactly the ReaditOn library folder and its contents. Nice and private.
+// Uses the full `drive` scope so the app can browse folders and open files the
+// user already has in Drive (not only files it created).
 import { auth } from './auth.js';
 import { LIBRARY_FOLDER_NAME, APP_TAG } from './config.js';
 
@@ -70,7 +70,23 @@ export const drive = {
     return created.id;
   },
 
-  // List PDFs in the library folder (newest first).
+  // List sub-folders of a folder (parentId 'root' = My Drive root). Needs the
+  // full Drive scope so it can see folders the app didn't create.
+  async listFolders(parentId) {
+    const query =
+      `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const url = `${API}/files?` + q({
+      q: query,
+      fields: 'files(id,name)',
+      orderBy: 'name',
+      pageSize: '500',
+    });
+    const data = await driveJson(url);
+    return data.files || [];
+  },
+
+  // List PDFs in a folder (newest first). With the full Drive scope this
+  // includes files you already had in the folder, not just app-created ones.
   async listPapers(folderId) {
     const query =
       `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`;

@@ -24,21 +24,26 @@ Open <http://localhost:8000>.
 
 ## 2. Create the Google credentials
 
-Both values you create here are **public and safe to commit**; access is restricted by
-the origins/referrers you set on them. The app uses only **non-sensitive scopes**
-(`drive.file`, `email`, `profile`), so Google requires **no verification** and shows
-**no "unverified app" warning**.
+The Client ID you create is **public and safe to commit**; access is restricted by the
+origins you set on it.
+
+ReadItOn uses the **full Drive scope** (`.../auth/drive`) so it can browse folders and
+open files you already have in Drive — not just files it created. This is a **restricted**
+scope, so Google shows a one-time **"Google hasn't verified this app"** screen that you
+(and any user) click through: *Advanced → Go to ReadItOn*. Harmless for personal use;
+full verification is only required to remove that screen for a wide audience.
 
 In the [Google Cloud Console](https://console.cloud.google.com/):
 
 1. **Create a project.**
 2. **APIs & Services → Library** → enable **Google Drive API**.
-   - Also enable **Google Picker API** (only needed for the "choose any folder" picker — see step 3b).
 3. **APIs & Services → OAuth consent screen:**
    - User type **External** → create; fill in app name / emails.
-   - **Publish app → In production** (removes the test-user limit; no verification needed for these scopes).
+   - **Data access → Add or remove scopes** → add `https://www.googleapis.com/auth/drive`.
+   - **Publish app → In production** (lets anyone sign in; unverified restricted scope is
+     capped at 100 users and shows the warning until you complete verification).
 
-### 3a. OAuth Client ID — **required**
+### OAuth Client ID
 
 - **APIs & Services → Credentials → Create credentials → OAuth client ID.**
 - Type **Web application**.
@@ -50,22 +55,11 @@ In the [Google Cloud Console](https://console.cloud.google.com/):
   export const CLIENT_ID = '1234567890-abcdef.apps.googleusercontent.com';
   ```
 
-### 3b. API key for the folder picker — **optional**
-
-Without this, papers go into an auto-created **`ReadItOn`** folder. Add it to let users
-store papers in **any** folder of their Drive via Google's folder picker.
-
-- **APIs & Services → Credentials → Create credentials → API key.**
-- Recommended: **restrict** the key to *HTTP referrers* (your origins) and to the
-  *Google Picker API*.
-- Make sure the **Google Picker API** is enabled (step 2).
-- Paste it into [`js/config.js`](js/config.js):
-  ```js
-  export const API_KEY = 'AIza...';
-  ```
-
-> Users can also override the Client ID for their own browser under
-> **Settings ⚙ → Advanced**, without editing code.
+> The folder chooser is a built-in in-app browser — no API key or Picker API needed.
+> `API_KEY` in `config.js` is unused (kept only for backward compatibility).
+>
+> After changing the scope, existing users must **sign out and sign in again** to grant
+> the new Drive permission.
 
 ---
 
@@ -99,7 +93,7 @@ PDF is never modified — **Export** produces a separate flattened copy.
 
 - **"Connect Drive" does nothing / "add a Client ID"** — `CLIENT_ID` isn't set in `js/config.js` (step 3a).
 - **`redirect_uri_mismatch` / origin error** — the current URL isn't in the OAuth client's *Authorized JavaScript origins*. Add the exact origin (scheme + host + port).
-- **Folder picker won't open** — set `API_KEY` and enable the **Google Picker API** (step 3b).
+- **Can't see existing Drive files / "unverified app"** — make sure the `.../auth/drive` scope is added on the OAuth consent screen (step 2), then **sign out and back in** to grant it.
 - **Popup blocked** — allow popups for the site, then click *Connect Drive* again.
 - **Blank page** — the app loads pdf.js / pdf-lib / Google scripts from CDNs, so it needs an internet connection. Check the browser console.
 
@@ -110,11 +104,11 @@ PDF is never modified — **Export** produces a separate flattened copy.
 ```
 index.html          shell, toolbar, SVG icon sprite
 css/styles.css      design system (light + dark)
-js/config.js        deployment config (Client ID, API key, scopes)
+js/config.js        deployment config (Client ID, scopes)
 js/store.js         settings (colors, folder) + helpers
 js/auth.js          Google sign-in (GIS token client, persisted session)
 js/drive.js         Google Drive v3 REST wrapper
-js/picker.js        Google Picker folder chooser
+js/folderBrowser.js in-app Drive folder browser
 js/storage.js       Drive storage backend
 js/viewer.js        pdf.js rendering (canvas + text layer)
 js/annotations.js   annotation model, rendering, input, undo

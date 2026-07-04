@@ -1,16 +1,18 @@
 // Google sign-in via Google Identity Services (GIS) token client.
-// We request an OAuth access token for the Drive `drive.file` scope.
+// We request an OAuth access token for the Drive scope (see config SCOPES).
 //
 // The token (and the fetched profile) are persisted in localStorage so a
 // page reload keeps the user signed in without any popup, for as long as
 // the token is valid (~1h). When it expires we refresh it silently
 // (prompt:'none'), which needs no UI while the user's Google session is
-// alive. drive.file is a low-risk scope, so caching the token locally is
-// an acceptable trade-off for this personal tool.
+// alive. Caching the token locally is an acceptable trade-off for this
+// personal tool.
 import { SCOPES } from './config.js';
 import { settings } from './store.js';
 
-const K_SESSION = 'readiton.session';
+// Bumped to invalidate old drive.file-only sessions so returning users
+// re-consent for the broader Drive scope.
+const K_SESSION = 'readiton.session.v2';
 
 let tokenClient = null;
 let accessToken = null;
