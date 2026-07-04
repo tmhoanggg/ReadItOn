@@ -4,7 +4,7 @@
 
 # ReadItOn 📖
 
-*Read it online!*
+Read it online!
 
 **Read and annotate your PDFs in your browser. Everything syncs with your Google Drive.**
 

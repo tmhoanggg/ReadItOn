@@ -1,7 +1,7 @@
 // ReadItOn — app controller. Papers live in the user's Google Drive, so the
 // app requires sign-in; there is no on-device mode.
 import { auth } from './auth.js';
-import { PdfViewer } from './viewer.js';
+import { PdfViewer, renderPdfThumbnail } from './viewer.js';
 import { AnnotationManager } from './annotations.js';
 import { exportAnnotatedPdf } from './export.js';
 import { settings, toast } from './store.js';
@@ -252,11 +252,10 @@ function renderLibrary(papers) {
     const card = document.createElement('div');
     card.className = 'paper-card';
     const title = p.name.replace(/\.pdf$/i, '');
-    const [c1, c2] = coverColors(p.name);
     card.innerHTML = `
-      <div class="paper-cover" style="--cover:linear-gradient(135deg, ${c1}, ${c2})">
-        <span class="cover-file"><svg class="ic"><use href="#i-file"/></svg></span>
-        <span class="cover-glyph">${escapeHtml((title[0] || '?').toUpperCase())}</span>
+      <div class="paper-thumb" data-thumb>
+        <span class="paper-tag">PDF</span>
+        <div class="thumb-ph"><svg class="ic"><use href="#i-file"/></svg></div>
       </div>
       <div class="paper-meta">
         <div style="flex:1;min-width:0">
@@ -269,6 +268,62 @@ function renderLibrary(papers) {
     card.addEventListener('click', () => openPaper(p));
     card.querySelector('.paper-del').addEventListener('click', (e) => { e.stopPropagation(); deletePaper(p); });
     els.grid.appendChild(card);
+    observeThumb(card.querySelector('[data-thumb]'), p);
+  }
+}
+
+// ---- Lazy first-page thumbnails ----
+const thumbCache = new Map(); // paperId -> data URL
+
+const thumbObserver = ('IntersectionObserver' in window)
+  ? new IntersectionObserver((entries, obs) => {
+      for (const e of entries) {
+        if (e.isIntersecting) { obs.unobserve(e.target); loadThumb(e.target, e.target.__paper); }
+      }
+    }, { rootMargin: '300px' })
+  : null;
+
+function observeThumb(holder, paper) {
+  if (!holder) return;
+  holder.__paper = paper;
+  if (thumbObserver) thumbObserver.observe(holder);
+  else loadThumb(holder, paper);
+}
+
+function setThumbImage(holder, src) {
+  const img = document.createElement('img');
+  img.className = 'thumb-img';
+  img.alt = '';
+  img.decoding = 'async';
+  img.src = src;
+  holder.querySelector('.thumb-img')?.remove();
+  holder.querySelector('.thumb-ph')?.classList.add('hidden');
+  holder.appendChild(img);
+}
+
+async function loadThumb(holder, paper) {
+  if (!holder || !paper) return;
+  if (thumbCache.has(paper.id)) { setThumbImage(holder, thumbCache.get(paper.id)); return; }
+  // Prefer Drive's ready-made thumbnail (cheap); fall back to rendering page 1.
+  if (paper.thumbnailLink) {
+    const probe = new Image();
+    probe.referrerPolicy = 'no-referrer';
+    probe.onload = () => { thumbCache.set(paper.id, probe.src); setThumbImage(holder, probe.src); };
+    probe.onerror = () => renderThumbFromPdf(holder, paper);
+    probe.src = paper.thumbnailLink;
+    return;
+  }
+  renderThumbFromPdf(holder, paper);
+}
+
+async function renderThumbFromPdf(holder, paper) {
+  try {
+    const bytes = await backend.getBytes(paper);
+    const url = await renderPdfThumbnail(bytes, 320);
+    thumbCache.set(paper.id, url);
+    setThumbImage(holder, url);
+  } catch {
+    /* leave the placeholder icon */
   }
 }
 
@@ -483,11 +538,6 @@ window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault()
 
 // ================= Helpers =================
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function coverColors(name) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
-  return [`hsl(${h}, 68%, 58%)`, `hsl(${(h + 40) % 360}, 66%, 48%)`];
-}
 function shortDate(iso) {
   const d = new Date(iso), now = new Date();
   const days = Math.floor((now - d) / 86400000);

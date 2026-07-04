@@ -39,6 +39,11 @@ export function createDriveBackend() {
       return drive.uploadPdf(await folder(), name, buffer);
     },
 
+    // Just the PDF bytes (used for rendering library thumbnails).
+    async getBytes(paper) {
+      return drive.downloadArrayBuffer(paper.id);
+    },
+
     async openPaper(paper) {
       const bytes = await drive.downloadArrayBuffer(paper.id);
       let data;

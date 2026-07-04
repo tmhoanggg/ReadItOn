@@ -11,6 +11,32 @@ const workerShim = URL.createObjectURL(
 );
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerShim;
 
+// Render the first page of a PDF to a JPEG data URL for library thumbnails.
+export async function renderPdfThumbnail(arrayBuffer, targetWidth = 320) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  try {
+    const page = await pdf.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const scale = targetWidth / base.width;
+    const viewport = page.getViewport({ scale });
+    const ratio = Math.min(2, window.devicePixelRatio || 1);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(viewport.width * ratio);
+    canvas.height = Math.floor(viewport.height * ratio);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({
+      canvasContext: ctx,
+      viewport,
+      transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null,
+    }).promise;
+    return canvas.toDataURL('image/jpeg', 0.82);
+  } finally {
+    pdf.destroy();
+  }
+}
+
 export class PdfViewer {
   constructor(container) {
     this.container = container;

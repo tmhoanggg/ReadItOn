@@ -92,7 +92,7 @@ export const drive = {
       `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`;
     const url = `${API}/files?` + q({
       q: query,
-      fields: 'files(id,name,modifiedTime,size)',
+      fields: 'files(id,name,modifiedTime,size,thumbnailLink)',
       orderBy: 'modifiedTime desc',
       pageSize: '200',
     });
