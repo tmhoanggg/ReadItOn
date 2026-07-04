@@ -10,7 +10,7 @@
 //  It is safe to commit: OAuth Web Client IDs are public; access is restricted
 //  by the Authorized JavaScript origins you set on the client.
 //
-export const CLIENT_ID = ''; // e.g. '1234567890-abcдef.apps.googleusercontent.com'
+export const CLIENT_ID = '158324090486-3ou2s7f9dvs5q7k828kg5fk6ov5keale.apps.googleusercontent.com'; // e.g. '1234567890-abcдef.apps.googleusercontent.com'
 
 // ---- Internals (no need to change) -------------------------------
 export const APP_NAME = 'ReadItOn';

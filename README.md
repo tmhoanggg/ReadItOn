@@ -105,29 +105,6 @@ When you first connect Drive, the app offers to upload your existing on-device p
 
 ---
 
-## 🛠️ Tech & structure
-
-Vanilla ES modules — no framework, no bundler. Libraries load from CDN:
-[pdf.js](https://mozilla.github.io/pdf.js/) (render), [pdf-lib](https://pdf-lib.js/) (export),
-Google Identity Services (auth).
-
-```
-index.html          shell, toolbar, SVG icon sprite
-css/styles.css      design system (light + dark)
-js/config.js        deployment config (Client ID, scopes)
-js/store.js         settings + helpers
-js/db.js            IndexedDB helper (local library)
-js/storage.js       local + Drive backends behind one interface
-js/auth.js          Google sign-in (GIS token client)
-js/drive.js         Google Drive v3 REST wrapper
-js/viewer.js        pdf.js rendering (canvas + text layer)
-js/annotations.js   annotation model, rendering, input, autosave
-js/export.js        flatten annotations into a PDF
-js/app.js           controller wiring it all together
-```
-
----
-
 ## 🧯 Troubleshooting
 
 - **Connect Drive does nothing / "add a Client ID"** — Drive sync isn't configured;
