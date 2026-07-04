@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/readiton_logo.png" alt="ReadItOn" width="128" />
+<img src="assets/readiton_logo_trans.png" alt="ReadItOn" width="128" />
 
 # ReadItOn 📖
 

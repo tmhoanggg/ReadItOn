@@ -34,6 +34,8 @@ const els = {
   inkColor: $('ink-color'),
   swatches: $('swatches'),
   annotTools: $('annotation-tools'),
+  undoBtn: $('undo-btn'),
+  redoBtn: $('redo-btn'),
   saveBtn: $('save-drive'),
   zoomLevel: $('zoom-level'),
   syncStatus: $('sync-status'),
@@ -317,8 +319,10 @@ async function openPaper(p) {
       notesListEl: els.notesList,
       onDirty: () => markDirty(),
       onToolReset: () => activateTool('select'),
+      onHistoryChange: () => updateHistoryButtons(),
     });
     activateTool('select');
+    updateHistoryButtons();
 
     await viewer.load(state.pdfBytes.slice(0));
     annot.setData(annotations);
@@ -348,6 +352,14 @@ async function backToLibrary() {
 $('back-to-library').addEventListener('click', backToLibrary);
 $('brand').addEventListener('click', (e) => { e.preventDefault(); if (!els.viewerView.classList.contains('hidden')) backToLibrary(); });
 els.saveBtn.addEventListener('click', doSave);
+
+// ================= Undo / redo =================
+function updateHistoryButtons() {
+  els.undoBtn.disabled = !(annot && annot.canUndo());
+  els.redoBtn.disabled = !(annot && annot.canRedo());
+}
+els.undoBtn.addEventListener('click', () => { if (annot && !annot.undo()) toast('Nothing to undo'); });
+els.redoBtn.addEventListener('click', () => { if (annot) annot.redo(); });
 
 // ================= Toolbar =================
 function activateTool(tool) {
@@ -417,6 +429,12 @@ document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
   const editable = tag === 'input' || tag === 'textarea' || e.target.isContentEditable;
 
+  // Redo — Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y
+  if ((e.ctrlKey || e.metaKey) && ((e.shiftKey && (e.key === 'z' || e.key === 'Z')) || e.key === 'y' || e.key === 'Y')) {
+    if (editable) return;
+    if (annot) { e.preventDefault(); annot.redo(); }
+    return;
+  }
   // Undo — Ctrl/Cmd+Z (let native undo run inside text fields)
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
     if (editable) return;

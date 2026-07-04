@@ -95,6 +95,8 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer; transition: background .15s ease;
 }
 .icon-btn:hover { background: var(--surface-2); }
+.icon-btn:disabled { opacity: .35; cursor: default; }
+.icon-btn:disabled:hover { background: transparent; }
 
 /* ---------- Top bar ---------- */
 #topbar {

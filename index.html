@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ReadItOn — annotate PDFs, synced everywhere</title>
   <meta name="description" content="A beautiful browser PDF reader. Highlight and note your papers; sync them to your own Google Drive across every device." />
-  <link rel="icon" type="image/png" href="assets/readiton_logo.png" />
+  <link rel="icon" type="image/png" href="assets/readiton_logo_trans.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -41,6 +41,8 @@
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-device" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2 20h20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5M20 9H10a6 6 0 0 0 0 12h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
@@ -51,7 +53,7 @@
   <header id="topbar">
     <a class="brand" id="brand" href="#" title="ReadItOn home">
       <span class="logo-mark" aria-hidden="true">
-        <img src="assets/readiton_logo.png" alt="" width="30" height="30" />
+        <img src="assets/readiton_logo_trans.png" alt="" width="30" height="30" />
       </span>
       <span class="brand-name">Read<span class="brand-accent">It</span>On</span>
     </a>
@@ -71,6 +73,11 @@
         <span class="tool-sep"></span>
         <div class="swatches" id="swatches"></div>
         <input type="color" id="ink-color" value="#ffd400" title="Custom color" />
+      </div>
+
+      <div class="toolgroup compact">
+        <button class="icon-btn" id="undo-btn" title="Undo (Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo"/></svg></button>
+        <button class="icon-btn" id="redo-btn" title="Redo (Ctrl+Shift+Z)" disabled><svg class="ic"><use href="#i-redo"/></svg></button>
       </div>
 
       <div class="toolgroup compact">
@@ -123,7 +130,7 @@
       <!-- Signed-out gate -->
       <section id="signin-gate" class="hero hidden">
         <div class="hero-glow"></div>
-        <img class="hero-logo" src="assets/readiton_logo.png" alt="ReadItOn" />
+        <img class="hero-logo" src="assets/readiton_logo_trans.png" alt="ReadItOn" />
         <span class="hero-badge">📖 Read. Mark. Sync.</span>
         <h2>Annotate your papers,<br/>synced to your Google Drive.</h2>
         <p class="hero-sub">ReadItOn keeps every paper and note in your own Google Drive, so your
@@ -139,7 +146,7 @@
       <!-- Empty / hero state (signed in, no papers yet) -->
       <section id="hero" class="hero hidden">
         <div class="hero-glow"></div>
-        <img class="hero-logo" src="assets/readiton_logo.png" alt="ReadItOn" />
+        <img class="hero-logo" src="assets/readiton_logo_trans.png" alt="ReadItOn" />
         <span class="hero-badge">📖 Read. Mark. Sync.</span>
         <h2>Annotate your papers,<br/>never lose a note again.</h2>
         <p class="hero-sub">Highlight, underline, scribble and comment on any PDF — right in your browser.

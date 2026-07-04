@@ -18,11 +18,13 @@ export class AnnotationManager {
     this.viewer = viewer;
     this.data = { version: 1, annotations: [] };
     this._history = [];        // undo stack of annotation snapshots (JSON)
+    this._redo = [];           // redo stack
     this._maxHistory = 100;
     this.tool = 'select';
     this.color = opts.color || '#ffd400';
     this.onDirty = opts.onDirty || (() => {});
     this.onToolReset = opts.onToolReset || (() => {});
+    this.onHistoryChange = opts.onHistoryChange || (() => {});
     this.notesListEl = opts.notesListEl || null;
 
     this.noteEditor = {
@@ -51,8 +53,10 @@ export class AnnotationManager {
       ? data
       : { version: 1, annotations: [] };
     this._history = [];   // fresh document → nothing to undo
+    this._redo = [];
     for (const rec of this.viewer.pages) if (rec) this.renderPage(rec);
     this.refreshPanel();
+    this.onHistoryChange();
   }
 
   getData() {
@@ -67,26 +71,39 @@ export class AnnotationManager {
 
   _forPage(n) { return this.data.annotations.filter(a => a.page === n); }
 
-  // ---- Undo ----
+  // ---- Undo / Redo ----
   // Snapshot the annotations array before a mutation so it can be reverted.
+  // Any new mutation invalidates the redo stack.
   _pushHistory() {
     this._history.push(JSON.stringify(this.data.annotations));
     if (this._history.length > this._maxHistory) this._history.shift();
+    this._redo = [];
   }
 
   canUndo() { return this._history.length > 0; }
+  canRedo() { return this._redo.length > 0; }
 
-  undo() {
-    if (!this._history.length) return false;
-    let prev;
-    try { prev = JSON.parse(this._history.pop()); } catch { return false; }
-    this.data.annotations = prev;
+  _restore(snapshot) {
+    try { this.data.annotations = JSON.parse(snapshot); } catch { return false; }
     this.noteEditor.el.classList.add('hidden');
     this.noteEditor.current = null;
     for (const rec of this.viewer.pages) if (rec) this.renderPage(rec);
     this.refreshPanel();
     this._markDirty();
+    this.onHistoryChange();
     return true;
+  }
+
+  undo() {
+    if (!this._history.length) return false;
+    this._redo.push(JSON.stringify(this.data.annotations));
+    return this._restore(this._history.pop());
+  }
+
+  redo() {
+    if (!this._redo.length) return false;
+    this._history.push(JSON.stringify(this.data.annotations));
+    return this._restore(this._redo.pop());
   }
 
   add(annotation) {
@@ -96,6 +113,7 @@ export class AnnotationManager {
     if (rec) this.renderPage(rec);
     this.refreshPanel();
     this._markDirty();
+    this.onHistoryChange();
   }
 
   remove(id) {
@@ -108,6 +126,7 @@ export class AnnotationManager {
     if (rec) this.renderPage(rec);
     this.refreshPanel();
     this._markDirty();
+    this.onHistoryChange();
   }
 
   // ---- Per-page wiring + rendering ----
