@@ -4,8 +4,11 @@
 
 # ReadItOn 📖
 
-**An in-browser PDF reader that lets you highlight and annotate your
-papers. Everything is synced to your own Google Drive, on every device.**
+*Read it online!*
+
+**Read and annotate your PDFs in your browser. Everything syncs with your Google Drive.**
+
+![image](assets/UI.png)
 
 </div>
 
