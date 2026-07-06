@@ -52,9 +52,12 @@ export function createDriveBackend() {
         annotFileIds.set(paper.id, af.id);
         data = await drive.downloadJson(af.id);
       } else {
+        // Don't write a sidecar just for opening a PDF — the annotations file
+        // is created lazily on the first save (see saveAnnotations), so simply
+        // reading a paper never litters the user's Drive with an empty
+        // "<name>.pdf.readiton.json".
+        annotFileIds.delete(paper.id);
         data = { ...emptyAnnots(), pdfId: paper.id, pdfName: paper.name };
-        const created = await drive.createAnnotationFile(await folder(), paper.id, paper.name, data);
-        annotFileIds.set(paper.id, created.id);
       }
       if (!Array.isArray(data.annotations)) data.annotations = [];
       return { bytes, annotations: data };

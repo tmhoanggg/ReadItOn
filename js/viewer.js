@@ -44,6 +44,8 @@ export class PdfViewer {
     this.scale = 1.3;
     this.pages = [];               // index by page number (1-based)
     this.onPageRendered = () => {}; // (rec) => void
+    this._renderSeq = 0;           // bumped on every renderAll; guards against races
+    this._renderTasks = new Set(); // in-flight pdf.js render tasks, for cancellation
   }
 
   async load(arrayBuffer) {
@@ -61,26 +63,51 @@ export class PdfViewer {
   }
 
   destroy() {
+    this._renderSeq++;             // invalidate any render pass still in flight
+    this._cancelRenderTasks();
     this.container.innerHTML = '';
     this.pages = [];
     if (this.pdf) { this.pdf.destroy(); this.pdf = null; }
   }
 
+  _cancelRenderTasks() {
+    for (const task of this._renderTasks) {
+      try { task.cancel(); } catch { /* already settled */ }
+    }
+    this._renderTasks.clear();
+  }
+
+  // Render every page. Guarded so that a second call (e.g. a zoom while the
+  // previous pass is still rendering) cleanly supersedes the first instead of
+  // interleaving with it — interleaving is what dropped and reordered pages.
   async renderAll() {
+    const gen = ++this._renderSeq;
+    this._cancelRenderTasks();
     this.container.innerHTML = '';
     this.pages = [];
+
+    // Create the page containers up front, in order, so the DOM order is
+    // always 1..N regardless of the order the async renders finish in.
+    const slots = [];
     for (let n = 1; n <= this.pdf.numPages; n++) {
-      await this.renderPage(n);
+      const pageDiv = document.createElement('div');
+      pageDiv.className = 'page';
+      pageDiv.dataset.page = String(n);
+      this.container.appendChild(pageDiv);
+      slots[n] = pageDiv;
+    }
+
+    for (let n = 1; n <= this.pdf.numPages; n++) {
+      if (gen !== this._renderSeq) return; // a newer pass took over
+      await this.renderPage(n, slots[n], gen);
     }
   }
 
-  async renderPage(n) {
+  async renderPage(n, pageDiv, gen) {
     const page = await this.pdf.getPage(n);
+    if (gen !== this._renderSeq) return; // superseded while awaiting
     const viewport = page.getViewport({ scale: this.scale });
 
-    const pageDiv = document.createElement('div');
-    pageDiv.className = 'page';
-    pageDiv.dataset.page = String(n);
     pageDiv.style.width = `${Math.floor(viewport.width)}px`;
     pageDiv.style.height = `${Math.floor(viewport.height)}px`;
     pageDiv.style.setProperty('--scale-factor', String(this.scale));
@@ -103,16 +130,27 @@ export class PdfViewer {
     interactiveLayer.className = 'interactive-layer';
 
     pageDiv.append(canvas, annotLayer, textLayer, captureLayer, interactiveLayer);
-    this.container.appendChild(pageDiv);
 
     const ctx = canvas.getContext('2d');
-    await page.render({
+    const renderTask = page.render({
       canvasContext: ctx,
       viewport,
       transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
-    }).promise;
+    });
+    this._renderTasks.add(renderTask);
+    try {
+      await renderTask.promise;
+    } catch (e) {
+      // A cancelled render (superseded pass / destroy) is expected — bail quietly.
+      if (e?.name === 'RenderingCancelledException') return;
+      throw e;
+    } finally {
+      this._renderTasks.delete(renderTask);
+    }
+    if (gen !== this._renderSeq) return; // superseded while rendering
 
     const textContent = await page.getTextContent();
+    if (gen !== this._renderSeq) return;
     const task = pdfjsLib.renderTextLayer({
       textContentSource: textContent,
       container: textLayer,
@@ -120,6 +158,7 @@ export class PdfViewer {
       textDivs: [],
     });
     await task.promise;
+    if (gen !== this._renderSeq) return;
 
     const rec = {
       pageNumber: n,
