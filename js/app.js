@@ -78,7 +78,11 @@ async function doSave() {
   if (!dirty) { setSync('✓ Saved', 'ok'); return; }
   try {
     setSync('Saving…');
-    await backend.saveAnnotations(state.paper, annot.getData());
+    // Annotations are written into the PDF itself; save returns the new bytes
+    // so we keep editing/exporting from the up-to-date document.
+    const base = state.pdfBytes.slice(0);
+    const newBytes = await backend.saveAnnotations(state.paper, annot.getData(), base);
+    if (newBytes) state.pdfBytes = newBytes;
     markSaved();
   } catch (e) {
     setSync('⚠ Save failed', 'warn');
@@ -432,8 +436,13 @@ function activateTool(tool) {
     highlightSwatch(c);
   }
 }
+// Tools are toggles: tapping the active tool again drops back to the select
+// (reading) pointer, so there's no separate "select" button to reach for.
+function toggleTool(tool) {
+  activateTool(currentTool === tool ? 'select' : tool);
+}
 document.querySelectorAll('#annotation-tools .tool').forEach(btn =>
-  btn.addEventListener('click', () => activateTool(btn.dataset.tool)));
+  btn.addEventListener('click', () => toggleTool(btn.dataset.tool)));
 
 // color swatches — apply to the currently selected tool
 function buildSwatches() {
@@ -514,7 +523,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (editable || e.metaKey || e.ctrlKey) return;
-  if (annot && TOOL_KEYS[e.key]) { activateTool(TOOL_KEYS[e.key]); }
+  if (annot && TOOL_KEYS[e.key]) { toggleTool(TOOL_KEYS[e.key]); }
 });
 
 // ================= Drag & drop =================

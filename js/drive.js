@@ -139,6 +139,21 @@ export const drive = {
     );
   },
 
+  // Replace the bytes of an existing PDF in place (same file id, so it keeps
+  // its Drive location, sharing links and revision history). Google Drive has
+  // no partial/append upload, so this re-uploads the whole file — the same
+  // thing desktop editors do when they sync a changed PDF.
+  async updatePdf(fileId, bytes) {
+    return driveJson(
+      `${UPLOAD}/files/${fileId}?uploadType=media&fields=id,modifiedTime`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: bytes,
+      }
+    );
+  },
+
   // Overwrite the content of an existing file with a JSON object.
   async updateJson(fileId, jsonObject) {
     return driveJson(

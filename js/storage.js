@@ -12,12 +12,14 @@
 //   deletePaper(paper)
 import { drive } from './drive.js';
 import { settings } from './store.js';
+import { buildAnnotatedPdf, readAnnotationData } from './pdfAnnotator.js';
 
 function emptyAnnots() { return { version: 1, annotations: [] }; }
 
 export function createDriveBackend() {
   let libraryFolderId = null;              // lazily-created fallback folder
-  const annotFileIds = new Map();          // paperId -> annotations file id
+  const sidecarIds = new Map();            // paperId -> legacy .json file id (for migration)
+  const migrated = new Set();              // papers whose legacy sidecar was already cleaned up
 
   // The folder papers are stored in: the user's chosen folder, else the
   // auto "ReadItOn" folder.
@@ -46,31 +48,50 @@ export function createDriveBackend() {
 
     async openPaper(paper) {
       const bytes = await drive.downloadArrayBuffer(paper.id);
-      let data;
-      const af = await drive.findAnnotationFile(paper.id);
-      if (af) {
-        annotFileIds.set(paper.id, af.id);
-        data = await drive.downloadJson(af.id);
-      } else {
-        // Don't write a sidecar just for opening a PDF — the annotations file
-        // is created lazily on the first save (see saveAnnotations), so simply
-        // reading a paper never litters the user's Drive with an empty
-        // "<name>.pdf.readiton.json".
-        annotFileIds.delete(paper.id);
-        data = { ...emptyAnnots(), pdfId: paper.id, pdfName: paper.name };
+
+      // Annotations now live INSIDE the PDF (as native annotations plus an
+      // embedded ReadItOn model), so there's no sidecar to read.
+      let data = null;
+      try { data = await readAnnotationData(bytes.slice(0)); } catch { data = null; }
+
+      // Back-compat: papers annotated by older builds still have an external
+      // ".readiton.json" sidecar. Read it, then it gets folded into the PDF and
+      // trashed on the next save.
+      if (!data) {
+        const af = await drive.findAnnotationFile(paper.id);
+        if (af) {
+          sidecarIds.set(paper.id, af.id);
+          try { data = await drive.downloadJson(af.id); } catch { data = null; }
+        }
       }
+
+      if (!data) data = { ...emptyAnnots(), pdfId: paper.id, pdfName: paper.name };
       if (!Array.isArray(data.annotations)) data.annotations = [];
+      if (!data.pdfId) data.pdfId = paper.id;
+      if (!data.pdfName) data.pdfName = paper.name;
       return { bytes, annotations: data };
     },
 
-    async saveAnnotations(paper, data) {
-      let fid = annotFileIds.get(paper.id);
-      if (!fid) {
-        const created = await drive.createAnnotationFile(await folder(), paper.id, paper.name, data);
-        fid = created.id;
-        annotFileIds.set(paper.id, fid);
+    // Write the annotations into the PDF itself and replace the file on Drive,
+    // so the marks are visible in Drive and any reader — and stay editable in
+    // ReadItOn. Returns the new PDF bytes so the caller can keep working from
+    // the up-to-date document.
+    async saveAnnotations(paper, data, pdfBytes) {
+      const newBytes = await buildAnnotatedPdf(pdfBytes, data);
+      await drive.updatePdf(paper.id, newBytes);
+
+      // Retire any leftover legacy sidecar now that everything lives in the PDF.
+      const sid = sidecarIds.get(paper.id);
+      if (sid) {
+        await drive.trash(sid).catch(() => {});
+        sidecarIds.delete(paper.id);
+        migrated.add(paper.id);
+      } else if (!migrated.has(paper.id)) {
+        const af = await drive.findAnnotationFile(paper.id).catch(() => null);
+        if (af) await drive.trash(af.id).catch(() => {});
+        migrated.add(paper.id);
       }
-      await drive.updateJson(fid, data);
+      return newBytes;
     },
 
     async deletePaper(paper) {

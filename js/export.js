@@ -1,6 +1,8 @@
 // Flatten annotations into a downloadable PDF using pdf-lib (window.PDFLib).
 // Our coordinates are normalized with a top-left origin; PDF uses a bottom-left
 // origin, so y is flipped on the way out.
+import { stripReadItOnAnnots } from './pdfAnnotator.js';
+
 const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
 
 function hexToRgb01(hex) {
@@ -11,6 +13,9 @@ function hexToRgb01(hex) {
 
 export async function exportAnnotatedPdf(pdfBytes, annotations, fileName) {
   const doc = await PDFDocument.load(pdfBytes);
+  // The live PDF may already carry ReadItOn's native annotations; drop them so
+  // the flattened export draws each mark exactly once (burned into the page).
+  stripReadItOnAnnots(doc);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const pages = doc.getPages();
 
