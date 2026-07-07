@@ -46,6 +46,7 @@ export class AnnotationManager {
     this.onDirty = opts.onDirty || (() => {});
     this.onToolReset = opts.onToolReset || (() => {});
     this.onHistoryChange = opts.onHistoryChange || (() => {});
+    this.getToolColor = opts.getToolColor || (() => this.color);
     this.notesListEl = opts.notesListEl || null;
 
     this.noteEditor = {
@@ -67,12 +68,25 @@ export class AnnotationManager {
     };
     this._wireAnnotPopup();
 
-    // Global mouseup handles text-selection based tools (highlight/underline).
-    this._onMouseUp = () => this._handleTextSelection();
+    // Selecting text in reading mode pops up a quick highlight/underline
+    // chooser (Zotero-style).
+    this.selPopup = {
+      el: document.getElementById('selection-popup'),
+      swatches: document.getElementById('sp-swatches'),
+      underline: document.getElementById('sp-underline'),
+      pending: null,
+    };
+    this._wireSelPopup();
+
+    // Global mouseup handles text-selection based tools (highlight/underline)
+    // and the reading-mode selection popup.
+    this._onMouseUp = (e) => this._handleTextSelection(e);
     document.addEventListener('mouseup', this._onMouseUp);
 
-    // Click outside a selected mark / its popup clears the selection.
+    // Click outside a selected mark / its popup clears the selection; click
+    // outside the selection popup dismisses it.
     this._onDocMouseDown = (e) => {
+      if (this.selPopup?.pending && !e.target.closest('#selection-popup')) this._hideSelPopup();
       if (!this.selected) return;
       if (e.target.closest('#annot-popup') || e.target.closest('[data-annot-id]')) return;
       this.clearSelection();
@@ -87,6 +101,7 @@ export class AnnotationManager {
     document.removeEventListener('mousedown', this._onDocMouseDown);
     this.noteEditor.el.classList.add('hidden');
     if (this.annotPopup.el) this.annotPopup.el.classList.add('hidden');
+    this._hideSelPopup();
   }
 
   setData(data) {
@@ -249,10 +264,16 @@ export class AnnotationManager {
     this.onHistoryChange();
   }
 
-  // Attach a select-on-click handler to a rendered mark element.
+  // Attach select handlers to a rendered mark element: left-click (in select
+  // mode) or right-click both open the recolor/delete popup.
   _wireMarkClick(el, a) {
     el.addEventListener('click', (e) => {
       if (this.tool !== 'select') return;
+      e.stopPropagation();
+      this._selectMark(a, e);
+    });
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
       e.stopPropagation();
       this._selectMark(a, e);
     });
@@ -341,6 +362,7 @@ export class AnnotationManager {
     m.textContent = '📝';
     m.title = a.text || 'Note';
     m.addEventListener('click', (e) => { e.stopPropagation(); this._openNoteEditor(a, m); });
+    m.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); this._selectMark(a, e); });
     rec.interactiveLayer.appendChild(m);
   }
 
@@ -358,6 +380,7 @@ export class AnnotationManager {
     box.style.maxWidth = `${rec.width - a.x * rec.width - 6}px`;
 
     box.addEventListener('input', () => { a.text = box.textContent; this._markDirty(); });
+    box.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); this._selectMark(a, e); });
     box.addEventListener('blur', () => {
       if (!box.textContent.trim()) this.remove(a.id);
       else { this.refreshPanel(); this._markDirty(); }
@@ -444,18 +467,18 @@ export class AnnotationManager {
     this.onToolReset();
   }
 
-  // ---- Text selection tools (highlight / underline) ----
-  _handleTextSelection() {
-    if (this.tool !== 'highlight' && this.tool !== 'underline') return;
+  // ---- Text selection: direct tools + Zotero-style popup in select mode ----
+  // Normalized rects of the current browser text selection, or null.
+  _selectionRects() {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
     const range = sel.getRangeAt(0);
     const anchor = range.commonAncestorContainer;
     const el = anchor.nodeType === 1 ? anchor : anchor.parentElement;
     const pageEl = el?.closest?.('.page');
-    if (!pageEl) return;
+    if (!pageEl) return null;
     const rec = this.viewer.pages[Number(pageEl.dataset.page)];
-    if (!rec) return;
+    if (!rec) return null;
 
     const pageRect = pageEl.getBoundingClientRect();
     const rects = Array.from(range.getClientRects())
@@ -467,16 +490,82 @@ export class AnnotationManager {
         r.height / pageRect.height,
       ])
       .filter(([x, y, w, h]) => x >= -0.02 && y >= -0.02 && x + w <= 1.02 && y + h <= 1.02);
-    if (!rects.length) return;
+    if (!rects.length) return null;
+    return { page: rec.pageNumber, rects: mergeRowRects(rects) };
+  }
 
-    this.add({
-      id: uid(),
-      type: this.tool,
-      page: rec.pageNumber,
-      color: this.color,
-      rects: mergeRowRects(rects),
-    });
-    sel.removeAllRanges();
+  _handleTextSelection(e) {
+    if (this.tool === 'highlight' || this.tool === 'underline') {
+      const found = this._selectionRects();
+      if (!found) return;
+      this.add({
+        id: uid(),
+        type: this.tool,
+        page: found.page,
+        color: this.color,
+        rects: found.rects,
+      });
+      window.getSelection()?.removeAllRanges();
+      return;
+    }
+    // Reading mode: selecting text pops up a quick highlight/underline chooser
+    // (like Zotero), so you don't have to switch tools first.
+    if (this.tool === 'select') {
+      // A mouseup on the popup itself is a button press, not a new selection —
+      // leave the pending selection alone so the click can apply it.
+      if (e?.target?.closest?.('#selection-popup')) return;
+      const found = this._selectionRects();
+      if (!found) { this._hideSelPopup(); return; }
+      this._showSelPopup(found, e);
+    }
+  }
+
+  // ---- Quick-annotate popup over a text selection ----
+  _wireSelPopup() {
+    const sp = this.selPopup;
+    if (!sp.el) return;
+    sp.swatches.innerHTML = '';
+    for (const c of DEFAULT_COLORS) {
+      const s = document.createElement('button');
+      s.className = 'swatch';
+      s.style.background = c;
+      s.dataset.color = c;
+      s.title = `Highlight ${c}`;
+      s.addEventListener('click', () => this._applySelPopup('highlight', c));
+      sp.swatches.appendChild(s);
+    }
+    sp.underline.addEventListener('click', () =>
+      this._applySelPopup('underline', this.getToolColor('underline')));
+  }
+
+  _showSelPopup(found, ev) {
+    const sp = this.selPopup;
+    if (!sp.el) return;
+    sp.pending = found;
+    sp.el.classList.remove('hidden');
+    const w = sp.el.offsetWidth || 230, h = sp.el.offsetHeight || 44;
+    const cx = ev?.clientX ?? window.innerWidth / 2;
+    const cy = ev?.clientY ?? window.innerHeight / 2;
+    const left = Math.min(window.innerWidth - w - 8, Math.max(8, cx - w / 2));
+    let top = cy + 14;
+    if (top + h > window.innerHeight - 8) top = cy - h - 14;
+    sp.el.style.left = `${left}px`;
+    sp.el.style.top = `${top}px`;
+  }
+
+  _hideSelPopup() {
+    const sp = this.selPopup;
+    if (!sp.el) return;
+    sp.pending = null;
+    sp.el.classList.add('hidden');
+  }
+
+  _applySelPopup(type, color) {
+    const found = this.selPopup.pending;
+    this._hideSelPopup();
+    if (!found) return;
+    this.add({ id: uid(), type, page: found.page, color, rects: found.rects });
+    window.getSelection()?.removeAllRanges();
   }
 
   // ---- Sticky-note editor popover ----

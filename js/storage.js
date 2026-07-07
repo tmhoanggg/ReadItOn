@@ -77,7 +77,13 @@ export function createDriveBackend() {
     // ReadItOn. Returns the new PDF bytes so the caller can keep working from
     // the up-to-date document.
     async saveAnnotations(paper, data, pdfBytes) {
-      const newBytes = await buildAnnotatedPdf(pdfBytes, data);
+      // Rebuild from the FRESHEST bytes on Drive, not the copy downloaded at
+      // open time. Another app (PDF Expert, Acrobat…) may have synced its own
+      // annotations to this PDF since then; building on stale bytes would
+      // silently wipe those. Only our tagged marks are replaced.
+      let base = pdfBytes;
+      try { base = await drive.downloadArrayBuffer(paper.id); } catch { /* offline — fall back to in-memory copy */ }
+      const newBytes = await buildAnnotatedPdf(base, data);
       await drive.updatePdf(paper.id, newBytes);
 
       // Retire any leftover legacy sidecar now that everything lives in the PDF.

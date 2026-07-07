@@ -136,11 +136,10 @@ export class PdfViewer {
       canvasContext: ctx,
       viewport,
       transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
-      // We draw annotations ourselves in the overlay layer from the ReadItOn
-      // model. The PDF now also carries those same marks as native annotations
-      // (so they show in Drive/other readers); disable pdf.js's own annotation
-      // painting here so they don't render twice.
-      annotationMode: (pdfjsLib.AnnotationMode && pdfjsLib.AnnotationMode.DISABLE) ?? 0,
+      // pdf.js paints native annotations (default mode), so marks made in OTHER
+      // apps (PDF Expert, Acrobat…) are visible. ReadItOn's own marks are
+      // stripped from the display copy before load (see stripForDisplay) and
+      // drawn by the interactive overlay instead, so nothing renders twice.
     });
     this._renderTasks.add(renderTask);
     try {

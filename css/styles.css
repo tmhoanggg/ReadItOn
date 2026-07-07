@@ -345,6 +345,14 @@ body:has(#viewer-controls:not(.hidden)) .btn.support span { display: none; }
 .ap-del .ic { width: 16px; height: 16px; }
 .ap-del:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 
+/* Quick-annotate popup over a text selection (Zotero-style) */
+.sp-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border-radius: 7px; border: none; background: transparent; color: var(--text); cursor: pointer;
+}
+.sp-btn .ic { width: 16px; height: 16px; }
+.sp-btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
 .capture-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
 .tool-freehand .capture-layer { pointer-events: auto; cursor: crosshair; }
 .tool-text .capture-layer { pointer-events: auto; cursor: text; }

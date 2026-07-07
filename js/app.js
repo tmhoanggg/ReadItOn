@@ -7,6 +7,7 @@ import { exportAnnotatedPdf } from './export.js';
 import { settings, toast } from './store.js';
 import { DEFAULT_COLORS } from './config.js';
 import { createDriveBackend } from './storage.js';
+import { stripForDisplay } from './pdfAnnotator.js';
 import { pickFolderInApp, initFolderBrowser } from './folderBrowser.js';
 
 const $ = (id) => document.getElementById(id);
@@ -374,6 +375,7 @@ async function openPaper(p) {
     viewer = new PdfViewer(els.pdfScroll);
     annot = new AnnotationManager(viewer, {
       color: settings.getToolColor('highlight'),
+      getToolColor: (t) => settings.getToolColor(t),
       notesListEl: els.notesList,
       onDirty: () => markDirty(),
       onToolReset: () => activateTool('select'),
@@ -382,7 +384,9 @@ async function openPaper(p) {
     activateTool('select');
     updateHistoryButtons();
 
-    await viewer.load(state.pdfBytes.slice(0));
+    // Render a display copy with ReadItOn's own native marks stripped (the
+    // overlay draws those); annotations from other apps remain visible.
+    await viewer.load(await stripForDisplay(state.pdfBytes.slice(0)));
     annot.setData(annotations);
     updateZoomLabel();
     markSaved();

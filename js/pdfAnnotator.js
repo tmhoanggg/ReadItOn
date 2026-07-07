@@ -258,9 +258,11 @@ const BUILDERS = {
 
 // Remove every annotation ReadItOn previously authored (leaving other apps'
 // annotations in place), so a re-save re-emits our marks cleanly.
+// Returns how many were removed.
 export function stripReadItOnAnnots(doc) {
   const { PDFName, PDFArray } = lib();
   const ctx = doc.context;
+  let removed = 0;
   for (const page of doc.getPages()) {
     const annots = ctx.lookup(page.node.get(PDFName.of('Annots')));
     if (!(annots instanceof PDFArray)) continue;
@@ -269,11 +271,28 @@ export function stripReadItOnAnnots(doc) {
       const ref = annots.get(i);
       const dict = ctx.lookup(ref);
       const mine = dict && dict.get && dict.get(PDFName.of(MARK_KEY));
-      if (mine) continue; // drop ours
+      if (mine) { removed++; continue; } // drop ours
       keep.push(ref);
     }
     if (keep.size()) page.node.set(PDFName.of('Annots'), keep);
     else page.node.delete(PDFName.of('Annots'));
+  }
+  return removed;
+}
+
+// Bytes for the on-screen viewer: ReadItOn's own native annotations removed
+// (they're drawn by the interactive overlay instead), while annotations made
+// by OTHER apps stay in so pdf.js paints them. Returns the input untouched
+// when the PDF carries none of our marks.
+export async function stripForDisplay(bytes) {
+  const { PDFDocument } = lib();
+  try {
+    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const removed = stripReadItOnAnnots(doc);
+    if (!removed) return bytes;
+    return doc.save({ useObjectStreams: false });
+  } catch {
+    return bytes; // unparseable for pdf-lib — let pdf.js render the original
   }
 }
 
